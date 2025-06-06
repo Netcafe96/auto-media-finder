@@ -19,68 +19,51 @@ else:
     st.error("❌ Chưa có API Key của Gemini. Vui lòng thêm vào .streamlit/secrets.toml hoặc biến môi trường.")
 
 # --- Nhập nội dung kịch bản ---
-script = st.text_area("✍️ Nhập kịch bản về vũ trụ hoặc khoa học:", height=200)
+script = st.text_area("✍️ Nhập kịch bản về vũ trụ hoặc khoa học:", height=250)
 
 if script:
-    st.subheader("📘 Kết quả theo từng câu:")
-    sentences = re.split(r'(?<=[.!?])\\s+', script.strip())
+    st.subheader("📘 Phân tích từng câu:")
+    sentences = re.split(r'(?<=[.!?])\s+', script.strip())
 
     for i, sentence in enumerate(sentences):
         st.markdown(f"### 🔹 Câu {i+1}: {sentence}")
         prompt = quote(sentence)
         col1, col2 = st.columns(2)
 
-        # Ảnh từ Freepik
+        # --- Ảnh từ Freepik (chỉ hiển thị link) ---
         with col1:
-            st.markdown("**📷 Ảnh minh họa (Freepik):**")
+            st.markdown("**🖼 Ảnh minh họa (Freepik):**")
             freepik_url = f"https://www.freepik.com/search?format=search&query={prompt}&type=photo"
-            try:
-                html = requests.get(freepik_url, headers={"User-Agent": "Mozilla/5.0"}).text
-                soup = BeautifulSoup(html, "html.parser")
-                thumbs = soup.select("figure img")[:5]
-                if thumbs:
-                    for img in thumbs:
-                        img_url = img.get("src") or img.get("data-src")
-                        link = img.find_parent("a")
-                        if img_url and link:
-                            full_link = "https://www.freepik.com" + link.get("href")
-                            st.image(img_url, width=200)
-                            st.markdown(f"[🔗 Xem ảnh trên Freepik]({full_link})")
-                else:
-                    raise ValueError("Không tìm thấy ảnh Freepik")
-            except:
-                st.warning("❌ Không tìm thấy ảnh từ Freepik.")
+            st.markdown(f"[🔗 Tìm ảnh trên Freepik]({freepik_url})")
 
-        # Video từ NASA, ESA hoặc ảnh AI
+        # --- Video từ NASA/ESA hoặc tạo ảnh AI ---
         with col2:
-            st.markdown("**🎞 Video Khoa học (NASA & ESA):**")
+            st.markdown("**🎞 Video hoặc Ảnh minh họa:**")
             nasa_url = f"https://images.nasa.gov/search-results?q={prompt}&media=video"
             esa_url = f"https://www.esa.int/ESA_Multimedia/Search?SearchText={prompt}&SearchButton=GO"
 
-            show_video_links = False
+            # Thử kiểm tra xem NASA có kết quả không (chỉ kiểm tra thô)
+            found_video = False
             try:
-                nasa_html = requests.get(nasa_url, headers={"User-Agent": "Mozilla/5.0"}).text
-                if "search-results" in nasa_html and "No results found" not in nasa_html:
-                    show_video_links = True
+                html = requests.get(nasa_url, headers={"User-Agent": "Mozilla/5.0"}).text
+                if "No results found" not in html:
+                    found_video = True
             except:
                 pass
 
-            if show_video_links:
-                st.markdown(f"🔗 [Xem video liên quan trên NASA]({nasa_url})")
-                st.markdown(f"🔗 [Xem video liên quan trên ESA]({esa_url})")
+            if found_video:
+                st.markdown(f"🔗 [Xem video trên NASA]({nasa_url})")
+                st.markdown(f"🔗 [Xem video trên ESA]({esa_url})")
             else:
-                st.info("❗ Không tìm thấy video phù hợp – tạo ảnh minh họa AI bằng Gemini:")
-                if API_KEY:
-                    try:
-                        model = genai.GenerativeModel("models/gemini-pro-vision")
-                        response = model.generate_content(
-                            f"Cinematic illustration of: {sentence}",
-                            generation_config={"response_mime_type": "image/jpeg"}
-                        )
-                        img_bytes = response.parts[0].raw
-                        img = Image.open(BytesIO(img_bytes))
-                        st.image(img, caption="Ảnh AI minh họa từ Gemini", width=300)
-                    except Exception as e:
-                        st.error(f"Lỗi khi tạo ảnh từ Gemini: {e}")
-                else:
-                    st.error("Không có API key Gemini.")
+                st.info("🎨 Không có video phù hợp → tạo ảnh minh họa AI với Gemini")
+                try:
+                    model = genai.GenerativeModel("models/gemini-pro-vision")
+                    response = model.generate_content(
+                        f"Cinematic illustration of: {sentence}",
+                        generation_config={"response_mime_type": "image/jpeg"}
+                    )
+                    image_bytes = response.parts[0].raw
+                    image = Image.open(BytesIO(image_bytes))
+                    st.image(image, caption="Ảnh AI từ Gemini", use_column_width=True)
+                except Exception as e:
+                    st.error(f"❌ Lỗi tạo ảnh AI từ Gemini: {e}")
