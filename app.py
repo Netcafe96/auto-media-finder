@@ -1,32 +1,106 @@
-import streamlit as st import urllib.parse import requests from PIL import Image from io import BytesIO from bs4 import BeautifulSoup import re
+import streamlit as st
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import quote
+import re
+import tempfile
+import os
+import whisper
+import google.generativeai as genai
+from PIL import Image
+from io import BytesIO
 
-st.set_page_config(page_title="Auto Media Finder", layout="wide") st.title("🎬 Auto Media Finder - No API Version") st.markdown("Tự động hiển thị link video và hình ảnh từ các nền tảng phổ biến mà không cần API.")
+st.set_page_config(page_title="Space Media Finder", layout="wide")
+st.title("🚀 Tìm Ảnh & Video Khoa Học Vũ Trụ từ Kịch Bản")
 
-query = st.text_input("🔍 Nhập từ khóa tìm kiếm (ví dụ: 'Hố đen lớn nhất vũ trụ'):")
-
-def get_youtube_video_data(q, max_results=5): try: q_enc = urllib.parse.quote_plus(q + " short") url = f"https://www.youtube.com/results?search_query={q_enc}" headers = {"User-Agent": "Mozilla/5.0"} r = requests.get(url, headers=headers) video_ids = list(set(re.findall(r"watch?v=(.{11})", r.text))) results = [] for vid in video_ids: video_url = f"https://www.youtube.com/watch?v={vid}" thumbnail_url = f"https://img.youtube.com/vi/{vid}/0.jpg" results.append((video_url, thumbnail_url)) if len(results) >= max_results: break return results except: return []
-
-def get_google_image_previews(q, max_images=15): try: q_enc = urllib.parse.quote_plus(q) url = f"https://www.bing.com/images/search?q={q_enc}&form=HDRSC2&first=1&tsc=ImageHoverTitle" headers = {"User-Agent": "Mozilla/5.0"} r = requests.get(url, headers=headers, timeout=5) img_urls = list(set([ line.split('src="')[1].split('"')[0] for line in r.text.split('\n') if 'src="' in line and any(ext in line.lower() for ext in ['.jpg', '.jpeg', '.png']) and not any(x in line for x in ['data:', 'logo', 'icon']) ])) return img_urls[:max_images] if img_urls else None except: return None
-
-if query: st.markdown("---") st.subheader("🎥 YouTube Videos (with thumbnails)") videos = get_youtube_video_data(query) if videos: for url, thumb in videos: st.image(thumb, width=320) st.markdown(f"🔗 Xem video") else: st.warning("Không tìm thấy video YouTube phù hợp.")
-
-st.markdown("---")
-st.subheader("🖼️ Image Sources")
-q_enc = urllib.parse.quote_plus(query)
-st.markdown(f"- 🖼️ [Freepik Images](https://www.freepik.com/search?format=search&query={q_enc})")
-st.markdown(f"- 📹 [Freepik Videos](https://www.freepik.com/search/videos?query={q_enc})")
-
-st.markdown("### 🖼️ Google Image Preview (Top 15)")
-google_images = get_google_image_previews(query)
-if google_images:
-    for img_url in google_images:
-        try:
-            img_data = requests.get(img_url).content
-            image = Image.open(BytesIO(img_data))
-            if image.width >= 300:
-                st.image(image, caption=img_url, use_column_width=True)
-        except:
-            continue
+# --- Thiết lập Gemini API ---
+API_KEY = st.secrets["GEMINI_API_KEY"] if "GEMINI_API_KEY" in st.secrets else os.getenv("GEMINI_API_KEY")
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 else:
-    st.warning("Không tìm thấy ảnh phù hợp từ Google Images.")
+    st.error("❌ Chưa có API Key của Gemini. Vui lòng thêm vào .streamlit/secrets.toml hoặc biến môi trường.")
 
+# --- Chọn cách nhập nội dung ---
+input_type = st.radio("Chọn cách nhập nội dung:", ["Text", "MP3"])
+script = ""
+
+if input_type == "Text":
+    script = st.text_area("Nhập kịch bản về vũ trụ hoặc khoa học:", height=200)
+
+elif input_type == "MP3":
+    uploaded_file = st.file_uploader("Tải lên file MP3", type=["mp3"])
+    if uploaded_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_path = tmp_file.name
+        with st.spinner("🔊 Đang xử lý file âm thanh bằng Whisper..."):
+            model = whisper.load_model("base")
+            result = model.transcribe(tmp_path)
+            script = result["text"]
+        os.remove(tmp_path)
+        st.success("✅ Hoàn tất chuyển giọng nói thành văn bản!")
+        st.text_area("📄 Văn bản được nhận diện:", script, height=200)
+
+if script:
+    st.subheader("📘 Kết quả theo từng câu:")
+    sentences = re.split(r'(?<=[.!?])\\s+', script.strip())
+
+    for i, sentence in enumerate(sentences):
+        st.markdown(f"### 🔹 Câu {i+1}: {sentence}")
+        prompt = quote(sentence)
+        col1, col2 = st.columns(2)
+
+        # Ảnh từ Freepik
+        with col1:
+            st.markdown("**📷 Ảnh minh họa (Freepik):**")
+            freepik_url = f"https://www.freepik.com/search?format=search&query={prompt}&type=photo"
+            try:
+                html = requests.get(freepik_url, headers={"User-Agent": "Mozilla/5.0"}).text
+                soup = BeautifulSoup(html, "html.parser")
+                thumbs = soup.select("figure img")[:5]
+                if thumbs:
+                    for img in thumbs:
+                        img_url = img.get("src") or img.get("data-src")
+                        link = img.find_parent("a")
+                        if img_url and link:
+                            full_link = "https://www.freepik.com" + link.get("href")
+                            st.image(img_url, width=200)
+                            st.markdown(f"[🔗 Xem ảnh trên Freepik]({full_link})")
+                else:
+                    raise ValueError("Không tìm thấy ảnh Freepik")
+            except:
+                st.warning("❌ Không tìm thấy ảnh từ Freepik.")
+
+        # Video từ NASA, ESA hoặc ảnh AI (Gemini)
+        with col2:
+            st.markdown("**🎞 Video Khoa học (NASA & ESA):**")
+            nasa_url = f"https://images.nasa.gov/search-results?q={prompt}&media=video"
+            esa_url = f"https://www.esa.int/ESA_Multimedia/Search?SearchText={prompt}&SearchButton=GO"
+
+            show_video_links = False
+            try:
+                nasa_html = requests.get(nasa_url, headers={"User-Agent": "Mozilla/5.0"}).text
+                if "search-results" in nasa_html and "No results found" not in nasa_html:
+                    show_video_links = True
+            except:
+                pass
+
+            if show_video_links:
+                st.markdown(f"🔗 [Xem video liên quan trên NASA]({nasa_url})")
+                st.markdown(f"🔗 [Xem video liên quan trên ESA]({esa_url})")
+            else:
+                st.info("❗ Không tìm thấy video phù hợp – tạo ảnh minh họa AI bằng Gemini:")
+                if API_KEY:
+                    try:
+                        model = genai.GenerativeModel("models/gemini-pro-vision")
+                        response = model.generate_content(
+                            f"Cinematic illustration of: {sentence}",
+                            generation_config={"response_mime_type": "image/jpeg"}
+                        )
+                        img_bytes = response.parts[0].raw
+                        img = Image.open(BytesIO(img_bytes))
+                        st.image(img, caption="Ảnh AI minh họa từ Gemini", width=300)
+                    except Exception as e:
+                        st.error(f"Lỗi khi tạo ảnh từ Gemini: {e}")
+                else:
+                    st.error("Không có API key Gemini.")
