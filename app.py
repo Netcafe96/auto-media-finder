@@ -8,7 +8,7 @@ query = st.text_input("🔍 Nhập từ khóa tìm kiếm (ví dụ: 'Hố đen 
 
 Helper functions
 
-def get_youtube_links(q, max_results=5): try: q_enc = urllib.parse.quote_plus(q + " short") url = f"https://www.youtube.com/results?search_query={q_enc}" headers = {"User-Agent": "Mozilla/5.0"} r = requests.get(url, headers=headers) soup = BeautifulSoup(r.text, 'html.parser') results = [] for line in r.text.split('\n'): if 'watch?v=' in line: vid = line.split('watch?v=')[1].split('\')[0].split('"')[0] link = f"https://www.youtube.com/watch?v={vid}" if link not in results: results.append(link) if len(results) >= max_results: break return results except: return []
+def get_youtube_links(q, max_results=5): try: q_enc = urllib.parse.quote_plus(q + " short") url = f"https://www.youtube.com/results?search_query={q_enc}" headers = {"User-Agent": "Mozilla/5.0"} r = requests.get(url, headers=headers) results = [] seen = set() for line in r.text.split('\n'): if 'watch?v=' in line: try: vid = line.split('watch?v=')[1].split('\')[0].split('"')[0] link = f"https://www.youtube.com/watch?v={vid}" if link not in seen: results.append(link) seen.add(link) if len(results) >= max_results: break except: continue return results except: return []
 
 def get_tiktok_links(q, max_results=5): try: q_enc = urllib.parse.quote_plus(q) url = f"https://www.tiktok.com/search?q={q_enc}" headers = {"User-Agent": "Mozilla/5.0"} r = requests.get(url, headers=headers) soup = BeautifulSoup(r.text, 'html.parser') links = [] for a in soup.find_all('a', href=True): href = a['href'] if '/video/' in href and href.startswith("https://www.tiktok.com/"): if href not in links: links.append(href) if len(links) >= max_results: break return links except: return []
 
