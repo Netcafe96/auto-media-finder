@@ -1,50 +1,53 @@
-import streamlit as st
-import urllib.parse
+import streamlit as st import urllib.parse import requests from PIL import Image from io import BytesIO from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="Auto Media Finder", layout="wide")
-st.title("🎬 Auto Media Finder for Science Scripts")
-st.markdown("Tự động tạo liên kết tìm kiếm video và hình ảnh từ kịch bản khoa học.")
+st.set_page_config(page_title="Auto Media Finder", layout="wide") st.title("🎬 Auto Media Finder - No API Version") st.markdown("Tự động hiển thị link video và hình ảnh từ các nền tảng phổ biến mà không cần API.")
 
-# Input script
-script = st.text_area("📜 Nhập kịch bản khoa học:", height=300)
+Input script
 
-# Process script into segments
-def split_script(text):
-    import re
-    sentences = re.split(r'(?<=[.!?]) +', text.strip())
-    return [s for s in sentences if len(s) > 10]
+query = st.text_input("🔍 Nhập từ khóa tìm kiếm (ví dụ: 'Hố đen lớn nhất vũ trụ'):")
 
-# Generate search links
-def generate_links(keyword):
-    q = urllib.parse.quote_plus(keyword)
-    return {
-        "YouTube": f"https://www.youtube.com/results?search_query={q}",
-        "TikTok": f"https://www.tiktok.com/search?q={q}",
-        "Freepik Video": f"https://www.freepik.com/videos/search/{q}",
-        "Archive.org": f"https://archive.org/search.php?query={q}",
-        "Google Images": f"https://www.google.com/search?q={q}&tbm=isch",
-        "Wikimedia": f"https://commons.wikimedia.org/w/index.php?search={q}",
-        "Freepik Image": f"https://www.freepik.com/search?format=search&query={q}"
-    }
+Helper functions
 
-if script:
-    st.markdown("---")
-    st.subheader("🔎 Kết quả tìm kiếm:")
-    segments = split_script(script)
+def get_youtube_links(q, max_results=5): try: q_enc = urllib.parse.quote_plus(q + " short") url = f"https://www.youtube.com/results?search_query={q_enc}" headers = {"User-Agent": "Mozilla/5.0"} r = requests.get(url, headers=headers) soup = BeautifulSoup(r.text, 'html.parser') results = [] for line in r.text.split('\n'): if 'watch?v=' in line: vid = line.split('watch?v=')[1].split('\')[0].split('"')[0] link = f"https://www.youtube.com/watch?v={vid}" if link not in results: results.append(link) if len(results) >= max_results: break return results except: return []
 
-    for i, segment in enumerate(segments, 1):
-        st.markdown(f"### 📌 Đoạn {i}: {segment}")
-        links = generate_links(segment)
+def get_tiktok_links(q, max_results=5): try: q_enc = urllib.parse.quote_plus(q) url = f"https://www.tiktok.com/search?q={q_enc}" headers = {"User-Agent": "Mozilla/5.0"} r = requests.get(url, headers=headers) soup = BeautifulSoup(r.text, 'html.parser') links = [] for a in soup.find_all('a', href=True): href = a['href'] if '/video/' in href and href.startswith("https://www.tiktok.com/"): if href not in links: links.append(href) if len(links) >= max_results: break return links except: return []
 
-        with st.expander("🎥 VIDEO ƯU TIÊN"):
-            st.markdown(f"- [▶️ YouTube]({links['YouTube']})")
-            st.markdown(f"- [🎵 TikTok]({links['TikTok']})")
-            st.markdown(f"- [📹 Freepik Video]({links['Freepik Video']})")
-            st.markdown(f"- [📼 Archive.org]({links['Archive.org']})")
+def get_google_image_previews(q, max_images=5): try: q_enc = urllib.parse.quote_plus(q) url = f"https://www.bing.com/images/search?q={q_enc}&form=HDRSC2&first=1&tsc=ImageBasicHover" headers = {"User-Agent": "Mozilla/5.0"} r = requests.get(url, headers=headers, timeout=5) img_urls = list(set([ line.split('src="')[1].split('"')[0] for line in r.text.split('\n') if 'mimg' in line and 'src="' in line ])) return img_urls[:max_images] if img_urls else None except: return None
 
-        with st.expander("🖼️ HÌNH ẢNH"):
-            st.markdown(f"- [🖼️ Google Images]({links['Google Images']})")
-            st.markdown(f"- [🌐 Wikimedia Commons]({links['Wikimedia']})")
-            st.markdown(f"- [🎨 Freepik Image]({links['Freepik Image']})")
+if query: st.markdown("---") st.subheader("🎥 Video Links")
 
-        st.markdown("---")
+with st.spinner("🔎 Đang tìm video YouTube..."):
+    yt_links = get_youtube_links(query)
+    if yt_links:
+        for i, link in enumerate(yt_links, 1):
+            st.markdown(f"{i}. [YouTube Video]({link})")
+    else:
+        st.warning("Không tìm thấy video YouTube phù hợp.")
+
+with st.spinner("🔎 Đang tìm video TikTok..."):
+    tk_links = get_tiktok_links(query)
+    if tk_links:
+        for i, link in enumerate(tk_links, 1):
+            st.markdown(f"{i}. [TikTok Video]({link})")
+    else:
+        st.warning("Không tìm thấy video TikTok phù hợp.")
+
+st.markdown("---")
+st.subheader("🖼️ Image Sources")
+q_enc = urllib.parse.quote_plus(query)
+st.markdown(f"- 🖼️ [Freepik Images](https://www.freepik.com/search?format=search&query={q_enc})")
+st.markdown(f"- 📹 [Freepik Videos](https://www.freepik.com/videos/search/{q_enc})")
+
+st.markdown("### 🖼️ Google Image Preview")
+google_images = get_google_image_previews(query)
+if google_images:
+    for img_url in google_images:
+        try:
+            img_data = requests.get(img_url).content
+            image = Image.open(BytesIO(img_data))
+            st.image(image, caption=img_url, use_column_width=True)
+        except:
+            continue
+else:
+    st.warning("Không tìm thấy ảnh phù hợp từ Google Images.")
+
